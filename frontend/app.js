@@ -58,6 +58,10 @@ async function loadMessages() {
 }
 
 function connectWS() {
+  if (ws) {
+    ws.onclose = null;
+    ws.close();
+  }
   const proto = location.protocol === "https:" ? "wss" : "ws";
   ws = new WebSocket(`${proto}://${location.host}/ws`);
   ws.onmessage = (ev) => {
@@ -105,6 +109,11 @@ loginBtn.onclick = async () => {
 };
 
 logoutBtn.onclick = () => {
+  if (ws) {
+    ws.onclose = null;
+    ws.close();
+    ws = undefined;
+  }
   token = "";
   localStorage.removeItem("token");
   showAuth();

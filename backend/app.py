@@ -1,8 +1,6 @@
 import os
 import asyncio
-from typing import Optional, List
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Depends, HTTPException, status, Request
-from fastapi.responses import FileResponse
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Depends, HTTPException, status
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -19,6 +17,14 @@ load_dotenv()
 
 APP_HOST = os.getenv("APP_HOST", "0.0.0.0")
 APP_PORT = int(os.getenv("APP_PORT", "8000"))
+# Recent messages to include as LLM context (same window as /api/messages default)
+LLM_CONTEXT_MESSAGES = int(os.getenv("LLM_CONTEXT_MESSAGES", "50"))
+
+LLM_SYSTEM_PROMPT = (
+    "You are a helpful assistant participating in a small group chat. "
+    "Messages from people appear as \"<username>: <text>\". Assistant replies are prior bot messages. "
+    "Use the conversation so far to understand the topic, then answer the latest question clearly and concisely."
+)
 
 app = FastAPI(title="Group Chat with LLM Bot")
 
@@ -64,27 +70,34 @@ async def broadcast_message(session: AsyncSession, msg: Message):
         }
     })
 
-async def maybe_answer_with_llm(session: AsyncSession, content: str):
+async def maybe_answer_with_llm(content: str):
     # naive heuristic: reply if the message contains a question mark
     if "?" not in content:
         return
-    system_prompt = (
-        "You are a helpful assistant participating in a small group chat. "
-        "Provide concise, accurate answers suitable for a shared chat context. "
-        "Cite facts succinctly when helpful and avoid extremely long messages."
-    )
-    try:
-        reply_text = await chat_completion([
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": content}
-        ])
-    except Exception as e:
-        reply_text = f"(LLM error) {e}"
-    bot_msg = Message(user_id=None, content=reply_text, is_bot=True)
-    session.add(bot_msg)
-    await session.commit()
-    await session.refresh(bot_msg)
-    await broadcast_message(session, bot_msg)
+    async with SessionLocal() as session:
+        res = await session.execute(
+            select(Message).order_by(desc(Message.created_at)).limit(LLM_CONTEXT_MESSAGES)
+        )
+        rows = list(reversed(res.scalars().all()))
+
+        messages_for_llm = [{"role": "system", "content": LLM_SYSTEM_PROMPT}]
+        for m in rows:
+            if m.is_bot:
+                messages_for_llm.append({"role": "assistant", "content": m.content})
+            else:
+                u = await session.get(User, m.user_id) if m.user_id else None
+                uname = u.username if u else "unknown"
+                messages_for_llm.append({"role": "user", "content": f"{uname}: {m.content}"})
+
+        try:
+            reply_text = await chat_completion(messages_for_llm)
+        except Exception as e:
+            reply_text = f"(LLM error) {e}"
+        bot_msg = Message(user_id=None, content=reply_text, is_bot=True)
+        session.add(bot_msg)
+        await session.commit()
+        await session.refresh(bot_msg)
+        await broadcast_message(session, bot_msg)
 
 # --------- Routes ---------
 @app.on_event("startup")
@@ -143,7 +156,7 @@ async def post_message(payload: MessagePayload, username: str = Depends(get_curr
     await session.refresh(m)
     await broadcast_message(session, m)
     # fire-and-forget LLM answer
-    asyncio.create_task(maybe_answer_with_llm(session, payload.content))
+    asyncio.create_task(maybe_answer_with_llm(payload.content))
     return {"ok": True, "id": m.id}
 
 @app.websocket("/ws")
