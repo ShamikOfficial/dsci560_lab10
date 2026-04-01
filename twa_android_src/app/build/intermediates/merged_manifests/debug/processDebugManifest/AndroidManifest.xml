@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    package="com.helloworld.groupchat.twa"
+    package="com.cookieai.groupchat.twa"
     android:versionCode="1"
     android:versionName="1.0" >
 
@@ -26,7 +26,8 @@
         android:icon="@mipmap/ic_launcher"
         android:label="GroupChat"
         android:supportsRtl="true"
-        android:testOnly="true" >
+        android:testOnly="true"
+        android:usesCleartextTraffic="true" >
 
         <!-- LauncherActivity from android-browser-helper opens the TWA -->
         <activity

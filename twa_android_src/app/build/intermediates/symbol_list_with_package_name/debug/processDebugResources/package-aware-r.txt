@@ -1,4 +1,4 @@
-com.helloworld.groupchat.twa
+com.cookieai.groupchat.twa
 attr alpha
 attr font
 attr fontProviderAuthority

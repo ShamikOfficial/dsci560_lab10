@@ -8,6 +8,7 @@
         android:icon="@mipmap/ic_launcher"
         android:allowBackup="true"
         android:supportsRtl="true"
+        android:usesCleartextTraffic="true"
         >
 
         <!-- LauncherActivity from android-browser-helper opens the TWA -->
